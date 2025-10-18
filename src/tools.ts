@@ -309,12 +309,41 @@ async function uploadToGemini(
     throw new Error(`Failed to upload file: ${uploadResponse.status} ${errorText}`);
   }
 
-  const result = await uploadResponse.json() as { file: { name: string; uri: string } };
+  const result = await uploadResponse.json() as { file: { name: string; uri: string; state: string } };
+  const fileId = result.file.name; // "files/abc123" format
 
-  return {
-    uri: result.file.name, // Returns "files/abc123" format
-    uploadedAt: Date.now(),
-  };
+  // Step 3: Wait for file to be ACTIVE (required before using in Gemini)
+  const maxAttempts = 10;
+  const delayMs = 1000;
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const checkResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${fileId}?key=${env.GEMINI_API_KEY}`,
+      { method: 'GET' }
+    );
+
+    if (checkResponse.ok) {
+      const fileData = await checkResponse.json() as { state: string };
+      
+      if (fileData.state === 'ACTIVE') {
+        return {
+          uri: fileId,
+          uploadedAt: Date.now(),
+        };
+      }
+      
+      if (fileData.state === 'FAILED') {
+        throw new Error(`File processing failed for ${filename}`);
+      }
+      
+      // State is PROCESSING, wait and retry
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    } else {
+      throw new Error(`Failed to check file status: ${checkResponse.status}`);
+    }
+  }
+
+  throw new Error(`File ${filename} did not become ACTIVE after ${maxAttempts} attempts`);
 }
 
 // Helper: Delete file from Gemini Files API using REST API (exported for use in delete endpoint)

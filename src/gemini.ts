@@ -180,7 +180,8 @@ You are NOT limited to just listing files - you can and SHOULD read them when ne
           });
         }
 
-        // Send function responses (ONLY function responses - cannot mix with other parts)
+        // Send function responses back to model
+        // Note: gemini_uri in the response is enough - Gemini SDK handles file attachment automatically
         const functionResponseParts = functionResponses.map(fr => ({
           functionResponse: {
             name: fr.name,
@@ -189,27 +190,7 @@ You are NOT limited to just listing files - you can and SHOULD read them when ne
         }));
         
         const functionResult = await chat.sendMessage(functionResponseParts as any);
-        
-        // Collect any files that need to be attached
-        const filesToAttach: any[] = [];
-        for (const fr of functionResponses) {
-          if (fr.response?.gemini_uri) {
-            filesToAttach.push({
-              fileData: {
-                mimeType: fr.response.content_type || 'application/octet-stream',
-                fileUri: fr.response.gemini_uri,
-              },
-            });
-          }
-        }
-        
-        // If there are files to attach, send them in a SEPARATE message
-        if (filesToAttach.length > 0) {
-          const fileResult = await chat.sendMessage(filesToAttach as any);
-          response = fileResult.response;
-        } else {
-          response = functionResult.response;
-        }
+        response = functionResult.response;
         
         // Check if this response has a text answer (not more function calls)
         const nextFunctionCalls = response.functionCalls();
