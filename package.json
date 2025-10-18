@@ -1,0 +1,25 @@
+{
+  "name": "doc-assistant",
+  "version": "1.0.0",
+  "description": "AI-powered document assistant with tool calling and streaming",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest",
+    "db:create": "wrangler d1 create doc-assistant-db",
+    "db:migrate": "wrangler d1 migrations apply doc-assistant-db",
+    "db:migrate-local": "wrangler d1 migrations apply doc-assistant-db --local",
+    "r2:create": "wrangler r2 bucket create doc-assistant-files"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^22.9.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.5",
+    "wrangler": "^3.89.0"
+  }
+}

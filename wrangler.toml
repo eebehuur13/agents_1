@@ -1,0 +1,28 @@
+name = "doc-assistant"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# R2 bucket for file storage
+[[r2_buckets]]
+binding = "DOCUMENTS"
+bucket_name = "doc-assistant-files"
+
+# D1 database for file metadata
+[[d1_databases]]
+binding = "DB"
+database_name = "doc-assistant-db"
+database_id = "58876e59-42d6-4080-8798-3b911e3f4ed9"
+
+# Environment variables (set via wrangler secret put)
+# GEMINI_API_KEY - Your Google AI API key
+
+[build]
+command = "npm install && npx tsc"
+
+[[build.upload.rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+
+[observability]
+enabled = true
