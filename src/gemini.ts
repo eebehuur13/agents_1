@@ -59,26 +59,29 @@ CAPABILITIES:
 - You CAN analyze and summarize document content
 - You CAN answer questions by reading multiple files
 
-FILE HANDLING:
-When you call read_file on any file, one of two things happens:
+FILE HANDLING - HOW IT WORKS:
+When you call the read_file tool, the system handles files in two ways:
 
 1. **Plain text files** (.txt, .json, .md):
-   - You receive the full text content directly in the response
-   - You can immediately analyze the text
+   - The full text content is returned directly in the tool response
+   - You can immediately analyze it
 
-2. **Supported binary files** (PDF, DOCX, XLSX, PPTX, images, audio, video, etc.):
-   - The file is uploaded to Gemini Files API and attached to our conversation
-   - You receive BOTH a confirmation message AND the actual file content in your context
-   - The file is automatically added to your conversation - you can see and analyze it immediately
+2. **Binary files** (PDF, DOCX, XLSX, PPTX, images, audio, video):
+   - The file is uploaded to Gemini's file storage
+   - The file content is then added to our conversation
+   - You will receive the file and can analyze it directly
 
-IMPORTANT: After calling read_file on ANY file type, you HAVE the content. 
+CRITICAL: After calling read_file, WAIT for the file content to appear in the conversation. 
+The file will be provided to you automatically - you don't need to request it again.
+
+Once you have the file content:
 - For XLSX/CSV: You can see all rows, columns, values, formulas
 - For DOCX/PDF: You can read all text, see structure, tables, formatting
 - For images: You can see what's in the image
 - For audio/video: You can understand the content
 - For text files: You have the raw text
 
-DO NOT say "I would need to see the data" - you HAVE the data after calling read_file. Just analyze it directly.
+DO NOT say "I cannot see the file" or "I would need access" - the file WILL be provided to you automatically after you call read_file.
 
 Supported binary file types (auto-uploaded to Gemini):
 - Documents: PDF, DOCX, DOC, HTML
@@ -177,22 +180,21 @@ You are NOT limited to just listing files - you can and SHOULD read them when ne
           });
         }
 
-        // Send ALL function responses back to model
-        // Also attach files if any gemini_uri was returned
-        const parts: any[] = [];
+        // Send function responses (ONLY function responses - cannot mix with other parts)
+        const functionResponseParts = functionResponses.map(fr => ({
+          functionResponse: {
+            name: fr.name,
+            response: fr.response,
+          },
+        }));
         
+        const functionResult = await chat.sendMessage(functionResponseParts as any);
+        
+        // Collect any files that need to be attached
+        const filesToAttach: any[] = [];
         for (const fr of functionResponses) {
-          // Add function response
-          parts.push({
-            functionResponse: {
-              name: fr.name,
-              response: fr.response,
-            },
-          });
-          
-          // If response contains gemini_uri, attach the file to the message
           if (fr.response?.gemini_uri) {
-            parts.push({
+            filesToAttach.push({
               fileData: {
                 mimeType: fr.response.content_type || 'application/octet-stream',
                 fileUri: fr.response.gemini_uri,
@@ -201,10 +203,13 @@ You are NOT limited to just listing files - you can and SHOULD read them when ne
           }
         }
         
-        const functionResult = await chat.sendMessage(parts as any);
-        
-        // Update response for next iteration
-        response = functionResult.response;
+        // If there are files to attach, send them in a SEPARATE message
+        if (filesToAttach.length > 0) {
+          const fileResult = await chat.sendMessage(filesToAttach as any);
+          response = fileResult.response;
+        } else {
+          response = functionResult.response;
+        }
         
         // Check if this response has a text answer (not more function calls)
         const nextFunctionCalls = response.functionCalls();

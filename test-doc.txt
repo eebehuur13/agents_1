@@ -1,0 +1,14 @@
+This is a test document for the document assistant.
+
+The document assistant is an AI-powered tool that can:
+1. Read and analyze files
+2. Answer questions about document contents  
+3. Summarize information from multiple documents
+
+This test file contains information about project deadlines:
+- Phase 1 Research: Due January 15, 2025
+- Phase 2 Development: Due March 30, 2025
+- Phase 3 Testing: Due May 15, 2025
+- Final Release: June 1, 2025
+
+The project budget is $150,000 allocated across three quarters.
