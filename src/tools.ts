@@ -1,5 +1,4 @@
 import { Env, Tool, ToolResult, FileMetadata } from './types';
-import { GoogleAIFileManager } from '@google/generative-ai/server';
 
 // Tool definitions for Gemini
 export const tools: Tool[] = [
@@ -254,49 +253,101 @@ function getMimeType(contentType: string | null, filename: string): string {
   return contentType || 'application/octet-stream';
 }
 
-// Helper: Upload file to Gemini Files API
+// Helper: Upload file to Gemini Files API using REST API (Cloudflare Workers compatible)
 async function uploadToGemini(
   fileBuffer: ArrayBuffer,
   filename: string,
   contentType: string | null,
   env: Env
 ): Promise<{ uri: string; uploadedAt: number }> {
-  const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-
   const mimeType = getMimeType(contentType, filename);
+  const fileSize = fileBuffer.byteLength;
 
-  // Convert ArrayBuffer to Buffer for Gemini API
-  const buffer = Buffer.from(fileBuffer);
+  // Step 1: Initiate resumable upload
+  const initResponse = await fetch(
+    'https://generativelanguage.googleapis.com/upload/v1beta/files',
+    {
+      method: 'POST',
+      headers: {
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Type': mimeType,
+        'X-goog-api-key': env.GEMINI_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        file: {
+          displayName: filename,
+        },
+      }),
+    }
+  );
 
-  const uploadResult = await fileManager.uploadFile(buffer, {
-    mimeType: mimeType,
-    displayName: filename,
+  if (!initResponse.ok) {
+    const errorText = await initResponse.text();
+    throw new Error(`Failed to initiate upload: ${initResponse.status} ${errorText}`);
+  }
+
+  const uploadUrl = initResponse.headers.get('X-Goog-Upload-URL');
+  if (!uploadUrl) {
+    throw new Error('No upload URL received from Gemini API');
+  }
+
+  // Step 2: Upload file data
+  const uploadResponse = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'X-Goog-Upload-Command': 'upload, finalize',
+      'X-Goog-Upload-Offset': '0',
+      'Content-Length': fileSize.toString(),
+    },
+    body: fileBuffer,
   });
 
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    throw new Error(`Failed to upload file: ${uploadResponse.status} ${errorText}`);
+  }
+
+  const result = await uploadResponse.json() as { file: { name: string; uri: string } };
+
   return {
-    uri: uploadResult.file.uri, // Full URI for SDK compatibility
+    uri: result.file.name, // Returns "files/abc123" format
     uploadedAt: Date.now(),
   };
 }
 
-// Helper: Delete file from Gemini Files API (exported for use in delete endpoint)
+// Helper: Delete file from Gemini Files API using REST API (exported for use in delete endpoint)
 export async function deleteFromGemini(geminiUri: string, env: Env): Promise<void> {
   try {
-    const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-    // geminiUri is already in format 'files/xyz', use it directly
-    await fileManager.deleteFile(geminiUri);
+    // geminiUri is in format 'files/xyz'
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${geminiUri}?key=${env.GEMINI_API_KEY}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Failed to delete from Gemini: ${response.status} ${errorText}`);
+    }
   } catch (error) {
     console.error('Failed to delete from Gemini:', error);
   }
 }
 
-// Helper: Check if file exists in Gemini (by trying to get it)
+// Helper: Check if file exists in Gemini using REST API (by trying to get it)
 async function checkGeminiFile(geminiUri: string, env: Env): Promise<boolean> {
   try {
-    const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-    // geminiUri is already in format 'files/xyz', use it directly
-    await fileManager.getFile(geminiUri);
-    return true; // File exists
+    // geminiUri is in format 'files/xyz'
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${geminiUri}?key=${env.GEMINI_API_KEY}`,
+      {
+        method: 'GET',
+      }
+    );
+    return response.ok; // File exists if 200 OK
   } catch (error) {
     return false; // File doesn't exist or expired
   }

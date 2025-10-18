@@ -59,28 +59,35 @@ CAPABILITIES:
 - You CAN analyze and summarize document content
 - You CAN answer questions by reading multiple files
 
-FILE HANDLING WITH GEMINI:
-When you call read_file on supported file types (PDF, DOCX, XLSX, PPTX, images, audio, video, etc.), 
-you will receive a "gemini_uri" in the response. This means THE FILE HAS BEEN LOADED INTO YOUR CONTEXT.
+FILE HANDLING:
+When you call read_file on any file, one of two things happens:
 
-IMPORTANT: Once you receive a gemini_uri, you can IMMEDIATELY analyze the file content. 
+1. **Plain text files** (.txt, .json, .md):
+   - You receive the full text content directly in the response
+   - You can immediately analyze the text
+
+2. **Supported binary files** (PDF, DOCX, XLSX, PPTX, images, audio, video, etc.):
+   - The file is uploaded to Gemini Files API and attached to our conversation
+   - You receive BOTH a confirmation message AND the actual file content in your context
+   - The file is automatically added to your conversation - you can see and analyze it immediately
+
+IMPORTANT: After calling read_file on ANY file type, you HAVE the content. 
 - For XLSX/CSV: You can see all rows, columns, values, formulas
 - For DOCX/PDF: You can read all text, see structure, tables, formatting
 - For images: You can see what's in the image
 - For audio/video: You can understand the content
+- For text files: You have the raw text
 
-DO NOT say "I would need to see the data" - you HAVE the data. Just analyze it directly.
+DO NOT say "I would need to see the data" - you HAVE the data after calling read_file. Just analyze it directly.
 
-Supported file types via Gemini:
-- Documents: PDF, DOCX, HTML
+Supported binary file types (auto-uploaded to Gemini):
+- Documents: PDF, DOCX, DOC, HTML
 - Spreadsheets: XLSX, CSV
 - Presentations: PPTX
 - Images: JPG, PNG, GIF, WEBP, SVG
 - Audio: MP3, WAV, FLAC, AAC
-- Video: MP4, MOV, AVI, MPEG, WebM
+- Video: MP4, MOV, AVI, MPEG, WebM, WMV, 3GPP, FLV
 - Archives: ZIP, TAR
-
-Plain text files (.txt, .json, .md) are returned as direct text content, not URIs.
 
 WORKFLOW:
 1. When asked about file contents: first list_files or search_files to find the right file, then read_file to get the content
@@ -171,12 +178,28 @@ You are NOT limited to just listing files - you can and SHOULD read them when ne
         }
 
         // Send ALL function responses back to model
-        const parts = functionResponses.map(fr => ({
-          functionResponse: {
-            name: fr.name,
-            response: fr.response,
-          },
-        }));
+        // Also attach files if any gemini_uri was returned
+        const parts: any[] = [];
+        
+        for (const fr of functionResponses) {
+          // Add function response
+          parts.push({
+            functionResponse: {
+              name: fr.name,
+              response: fr.response,
+            },
+          });
+          
+          // If response contains gemini_uri, attach the file to the message
+          if (fr.response?.gemini_uri) {
+            parts.push({
+              fileData: {
+                mimeType: fr.response.content_type || 'application/octet-stream',
+                fileUri: fr.response.gemini_uri,
+              },
+            });
+          }
+        }
         
         const functionResult = await chat.sendMessage(parts as any);
         
